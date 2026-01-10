@@ -15,6 +15,15 @@ import {
   initAudio,
 } from '@/lib/game'
 
+// Flutter Bridge type definition
+declare global {
+  interface Window {
+    FlutterBridge?: {
+      postMessage: (message: string) => void
+    }
+  }
+}
+
 const STORAGE_KEY = 'gravity-switch-highscore'
 
 function loadHighScore(): number {
@@ -188,10 +197,19 @@ export function useGame(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
           game.state = 'gameover'
           game.particles = [...game.particles, ...createDeathParticles(config.playerX, player.y)]
           playDeathSound()
-          
+
           if (game.score > game.highScore) {
             game.highScore = game.score
             saveHighScore(game.score)
+          }
+
+          // Notify Flutter app about game end
+          if (window.FlutterBridge) {
+            window.FlutterBridge.postMessage(JSON.stringify({
+              event: 'gameEnd',
+              score: game.score,
+              highScore: game.highScore
+            }))
           }
           break
         }
