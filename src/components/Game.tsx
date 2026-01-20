@@ -1,16 +1,11 @@
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect } from 'react'
 import { useGame } from '@/hooks/useGame'
 
 export function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const { dimensions, handleTap } = useGame(canvasRef)
-  
-  // Handle touch events
-  const handlePointerDown = useCallback((e: React.PointerEvent | React.TouchEvent | React.MouseEvent) => {
-    e.preventDefault()
-    handleTap()
-  }, [handleTap])
-  
+  const lastTapTimeRef = useRef<number>(0)
+
   // Handle keyboard events
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -19,26 +14,52 @@ export function Game() {
         handleTap()
       }
     }
-    
+
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleTap])
-  
-  // Prevent default touch behaviors
+
+  // Single unified touch/click handler using native event listener
   useEffect(() => {
-    const preventDefault = (e: TouchEvent) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const handleInput = (e: Event) => {
       e.preventDefault()
+      e.stopPropagation()
+
+      const now = Date.now()
+      // Strict debounce - ignore any input within 200ms
+      if (now - lastTapTimeRef.current < 200) {
+        return
+      }
+      lastTapTimeRef.current = now
+      handleTap()
     }
-    
-    document.addEventListener('touchstart', preventDefault, { passive: false })
-    document.addEventListener('touchmove', preventDefault, { passive: false })
-    
+
+    // Only use touchstart on touch devices, mousedown on non-touch
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+
+    if (isTouchDevice) {
+      canvas.addEventListener('touchstart', handleInput, { passive: false })
+    } else {
+      canvas.addEventListener('mousedown', handleInput)
+    }
+
+    // Prevent scrolling
+    const preventScroll = (e: Event) => e.preventDefault()
+    canvas.addEventListener('touchmove', preventScroll, { passive: false })
+
     return () => {
-      document.removeEventListener('touchstart', preventDefault)
-      document.removeEventListener('touchmove', preventDefault)
+      if (isTouchDevice) {
+        canvas.removeEventListener('touchstart', handleInput)
+      } else {
+        canvas.removeEventListener('mousedown', handleInput)
+      }
+      canvas.removeEventListener('touchmove', preventScroll)
     }
-  }, [])
-  
+  }, [handleTap])
+
   return (
     <div className="game-container w-full h-full flex items-center justify-center">
       <canvas
@@ -46,9 +67,6 @@ export function Game() {
         width={dimensions.width}
         height={dimensions.height}
         className="game-canvas touch-none select-none rounded-lg shadow-2xl cursor-pointer"
-        onPointerDown={handlePointerDown}
-        onTouchStart={handlePointerDown}
-        onClick={handlePointerDown}
         style={{
           maxWidth: '100%',
           maxHeight: '100%',
